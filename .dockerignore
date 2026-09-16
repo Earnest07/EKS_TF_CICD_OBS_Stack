@@ -1,0 +1,24 @@
+# Python caches
+**/__pycache__/
+**/*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# Pytest
+.pytest_cache/
+app/tests/
+
+# Infrastructure
+terraform/
+k8s/
+jenkins/
+scripts/
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md

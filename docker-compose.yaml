@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+
+    image: eks-cicd-demo:v1.0.0
+
+    container_name: eks_cicd_app
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      - APP_ENVIRONMENT=development
+
+    volumes:
+      - app_data:/app/data
+
+    restart: unless-stopped
+
+volumes:
+  app_data:
+    name: eks_cicd_app_data

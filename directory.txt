@@ -1,0 +1,61 @@
+
+app/
+├── __init__.py
+├── main.py
+├── config.py
+├── requirements.txt
+└── tests/
+    ├── __init__.py
+    └── test_main.py
+
+docker/
+└── Dockerfile
+
+k8s/
+├── base/
+│   ├── namespace.yaml
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── configmap.yaml
+│   └── ingress.yaml
+│
+└── overlays/
+    ├── dev/
+    │   └── kustomization.yaml
+    ├── staging/
+    │   └── kustomization.yaml
+    └── prod/
+        └── kustomization.yaml
+
+terraform/
+├── modules/
+│   ├── vpc/
+│   ├── eks/
+│   ├── ecr/
+|   |   ├── main.tf
+|   |   ├── variables.tf
+|   |   └── outputs.tf
+│   └── iam/
+│
+└── environments/
+    └── eks/
+        ├── dev/
+        |   ├── main.tf
+        |   ├── variables.tf
+        |   ├── provider.tf
+        |   └── outputs.tf
+        ├── staging/
+        └── prod/
+
+jenkins/
+└── Jenkinsfile
+
+scripts/
+├── build.sh
+├── test.sh
+└── deploy.sh
+
+.gitignore
+README.md
+.dockerignore
+docker-compose.yaml
