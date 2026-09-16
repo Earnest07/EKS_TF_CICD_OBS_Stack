@@ -22,12 +22,16 @@ k8s/
 │
 └── overlays/
     ├── dev/
-    │   └── kustomization.yaml
+    │   ├── kustomization.yaml
+    │   └── namespace.yaml
+    │
     ├── staging/
-    │   └── kustomization.yaml
+    │   ├── kustomization.yaml
+    │   └── namespace.yaml
+    │
     └── prod/
-        └── kustomization.yaml
-
+        ├── kustomization.yaml
+        └── namespace.yaml
 terraform/
 ├── modules/
 │   ├── vpc/
