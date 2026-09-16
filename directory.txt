@@ -17,6 +17,7 @@ k8s/
 │   ├── deployment.yaml
 │   ├── service.yaml
 │   ├── configmap.yaml
+│   ├── kustomization.yaml
 │   └── ingress.yaml
 │
 └── overlays/
@@ -30,7 +31,13 @@ k8s/
 terraform/
 ├── modules/
 │   ├── vpc/
+|   |   ├── main.tf
+|   |   ├── variables.tf
+|   |   └── outputs.tf
 │   ├── eks/
+|   |   ├── main.tf
+|   |   ├── variables.tf
+|   |   └── outputs.tf
 │   ├── ecr/
 |   |   ├── main.tf
 |   |   ├── variables.tf
@@ -39,13 +46,10 @@ terraform/
 │
 └── environments/
     └── eks/
-        ├── dev/
-        |   ├── main.tf
-        |   ├── variables.tf
-        |   ├── provider.tf
-        |   └── outputs.tf
-        ├── staging/
-        └── prod/
+        ├── main.tf
+        ├── variables.tf
+        ├── provider.tf
+        └── outputs.tf
 
 jenkins/
 └── Jenkinsfile
