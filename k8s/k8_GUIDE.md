@@ -1091,6 +1091,206 @@ kubectl get namespaces
 
 At that point, the EKS + Kubernetes environment is ready for the Jenkins phase.
 
+# 31. Start / Stop Kubernetes Application Workloads
+
+This section is for temporarily stopping the application without destroying the EKS cluster.
+
+## Stop All Application Pods
+
+Scale the application Deployment to zero replicas in all three environments:
+
+```powershell
+kubectl scale deployment eks-cicd-demo --replicas=0 -n dev
+
+kubectl scale deployment eks-cicd-demo --replicas=0 -n staging
+
+kubectl scale deployment eks-cicd-demo --replicas=0 -n prod
+```
+
+Verify:
+
+```powershell
+kubectl get deployments,pods -n dev
+
+kubectl get deployments,pods -n staging
+
+kubectl get deployments,pods -n prod
+```
+
+Expected:
+
+```text
+Deployment   0/0
+```
+
+The application Pods should no longer be running.
+
+---
+
+## Start All Application Pods
+
+To start the applications again:
+
+```powershell
+kubectl scale deployment eks-cicd-demo --replicas=1 -n dev
+
+kubectl scale deployment eks-cicd-demo --replicas=1 -n staging
+
+kubectl scale deployment eks-cicd-demo --replicas=1 -n prod
+```
+
+Verify:
+
+```powershell
+kubectl get deployments,pods -n dev
+
+kubectl get deployments,pods -n staging
+
+kubectl get deployments,pods -n prod
+```
+
+Expected:
+
+```text
+Deployment   1/1
+Pod          1/1 Running
+```
+
+---
+
+# 32. Stop Application vs Destroy Infrastructure
+
+These are two different operations.
+
+## Stop Application
+
+```powershell
+kubectl scale deployment eks-cicd-demo --replicas=0 -n dev
+kubectl scale deployment eks-cicd-demo --replicas=0 -n staging
+kubectl scale deployment eks-cicd-demo --replicas=0 -n prod
+```
+
+This:
+
+* Stops the application Pods.
+* Keeps the EKS cluster.
+* Keeps the worker nodes.
+* Keeps the VPC.
+* Keeps the ECR repository.
+* Keeps Kubernetes configuration.
+* Allows the application to be started again quickly.
+
+This is useful when temporarily pausing application workloads.
+
+**AWS infrastructure costs can still continue.**
+
+---
+
+## Destroy Infrastructure
+
+To remove the Terraform-managed AWS infrastructure:
+
+First review:
+
+```powershell
+terraform plan -destroy
+```
+
+Then:
+
+```powershell
+terraform destroy
+```
+
+Confirm:
+
+```text
+yes
+```
+
+This is a much more destructive operation.
+
+It can remove:
+
+```text
+EKS Cluster
+Managed Node Group
+VPC
+Subnets
+NAT Gateway
+Internet Gateway
+Route Tables
+Security Groups
+ECR Repository
+IAM resources
+```
+
+depending on what is managed by the current Terraform configuration.
+
+The exact resources destroyed are determined by the Terraform state and configuration.
+
+---
+
+# 33. Recommended Daily Lab Workflow
+
+If the infrastructure is already running and you only want to pause the application:
+
+### Stop
+
+```powershell
+kubectl scale deployment eks-cicd-demo --replicas=0 -n dev
+kubectl scale deployment eks-cicd-demo --replicas=0 -n staging
+kubectl scale deployment eks-cicd-demo --replicas=0 -n prod
+```
+
+### Start Later
+
+```powershell
+kubectl scale deployment eks-cicd-demo --replicas=1 -n dev
+kubectl scale deployment eks-cicd-demo --replicas=1 -n staging
+kubectl scale deployment eks-cicd-demo --replicas=1 -n prod
+```
+
+### If the entire lab is no longer needed
+
+```powershell
+terraform destroy
+```
+
+---
+
+# 34. Important Kubernetes Behavior
+
+Scaling a Deployment to zero does **not** delete the Deployment.
+
+For example:
+
+```text
+Deployment
+    │
+    ├── replicas: 0
+    │
+    └── Pods: 0
+```
+
+The Deployment, Service, ConfigMap and other Kubernetes objects remain.
+
+When you scale back to one:
+
+```text
+Deployment
+    │
+    ├── replicas: 1
+    │
+    └── Pod
+         └── Running
+```
+
+Kubernetes creates a new Pod automatically.
+
+Therefore, scaling to zero is a convenient way to temporarily stop the application while keeping the Kubernetes configuration intact.
+
+
 10. And how does kubectl know about AWS?
 
 Remember when we ran:
