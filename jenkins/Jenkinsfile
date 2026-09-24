@@ -1,0 +1,140 @@
+pipeline {
+
+    agent any
+
+    environment {
+        AWS_REGION = 'ap-south-1'
+        AWS_ACCOUNT_ID = '891048843822'
+
+        ECR_REPOSITORY = 'eks-cicd-demo'
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        ECR_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}"
+
+        EKS_CLUSTER = 'eks-cicd'
+        K8S_NAMESPACE = 'dev'
+        K8S_OVERLAY = 'k8s/overlays/dev'
+
+        // Jenkins build number creates an immutable image tag.
+        IMAGE_TAG = "v1.0.${BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                bat '''
+                    python -m venv .venv
+
+                    .venv\\Scripts\\python.exe -m pip install --upgrade pip
+
+                    .venv\\Scripts\\pip.exe install -r app\\requirements.txt
+                '''
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                bat '''
+                    .venv\\Scripts\\pytest.exe app\\tests -v
+                '''
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                bat """
+                    docker build ^
+                      -f docker\\Dockerfile ^
+                      -t ${ECR_IMAGE}:${IMAGE_TAG} ^
+                      .
+                """
+            }
+        }
+
+        stage('ECR Login') {
+            steps {
+                bat """
+                    aws ecr get-login-password ^
+                      --region ${AWS_REGION} ^
+                      | docker login ^
+                      --username AWS ^
+                      --password-stdin ${ECR_REGISTRY}
+                """
+            }
+        }
+
+        stage('Push Image to ECR') {
+            steps {
+                bat """
+                    docker push ${ECR_IMAGE}:${IMAGE_TAG}
+                """
+            }
+        }
+
+        stage('Configure EKS Access') {
+            steps {
+                bat """
+                    aws eks update-kubeconfig ^
+                      --region ${AWS_REGION} ^
+                      --name ${EKS_CLUSTER}
+                """
+            }
+        }
+
+        stage('Deploy Kubernetes Manifests') {
+            steps {
+                bat """
+                    kubectl apply -k ${K8S_OVERLAY}
+                """
+            }
+        }
+
+        stage('Update Deployment Image') {
+            steps {
+                bat """
+                    kubectl set image deployment/eks-cicd-demo ^
+                      eks-cicd-demo=${ECR_IMAGE}:${IMAGE_TAG} ^
+                      -n ${K8S_NAMESPACE}
+                """
+            }
+        }
+
+        stage('Wait for Rollout') {
+            steps {
+                bat """
+                    kubectl rollout status deployment/eks-cicd-demo ^
+                      -n ${K8S_NAMESPACE} ^
+                      --timeout=180s
+                """
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                bat '''
+                    kubectl get deployment -n dev
+                    kubectl get pods -n dev
+                    kubectl get service -n dev
+                '''
+            }
+        }
+    }
+
+    post {
+
+        success {
+            echo "CI/CD pipeline completed successfully."
+            echo "Image deployed: ${ECR_IMAGE}:${IMAGE_TAG}"
+        }
+
+        failure {
+            echo "CI/CD pipeline failed."
+        }
+    }
+}
