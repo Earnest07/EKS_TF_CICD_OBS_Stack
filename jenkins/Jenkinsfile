@@ -3,138 +3,934 @@ pipeline {
     agent any
 
     environment {
-        AWS_REGION = 'ap-south-1'
+
+        // ============================================================
+        // AWS
+        // ============================================================
+        AWS_REGION     = 'ap-south-1'
         AWS_ACCOUNT_ID = '891048843822'
 
+        // ============================================================
+        // ECR
+        // ============================================================
         ECR_REPOSITORY = 'eks-cicd-demo'
-        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-        ECR_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}"
+        ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        ECR_IMAGE      = "${ECR_REGISTRY}/${ECR_REPOSITORY}"
 
-        EKS_CLUSTER = 'eks-cicd'
-        K8S_NAMESPACE = 'dev'
-        K8S_OVERLAY = 'k8s/overlays/dev'
+        // ============================================================
+        // EKS
+        // ============================================================
+        EKS_CLUSTER_NAME = 'eks-cicd'
 
-        // Jenkins build number creates an immutable image tag.
+        K8S_NAMESPACE  = 'dev'
+        K8S_DEPLOYMENT = 'eks-cicd-demo'
+        K8S_CONTAINER  = 'eks-cicd-demo'
+
+        // ============================================================
+        // Windows Tools
+        // ============================================================
+        PYTHON_BIN = 'C:\\Users\\Earnest.Ebenezer\\AppData\\Local\\Programs\\Python\\Python312'
+
+        DOCKER_BIN = 'C:\\Users\\Earnest.Ebenezer\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin'
+
+        KUBECTL_BIN = 'C:\\Users\\Earnest.Ebenezer\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin'
+
+        // ============================================================
+        // Jenkins Workspace Kubeconfig
+        // ============================================================
+        KUBECONFIG = "${WORKSPACE}\\.kube\\config"
+
+        // ============================================================
+        // CI → CD IMAGE VERSION
+        //
+        // Example:
+        // Jenkins Build #13
+        // IMAGE_TAG = v1.0.13
+        //
+        // This SAME tag is:
+        // 1. Built
+        // 2. Pushed to ECR
+        // 3. Deployed to EKS
+        // ============================================================
         IMAGE_TAG = "v1.0.${BUILD_NUMBER}"
     }
 
     stages {
 
-        stage('Checkout') {
+        // ============================================================
+        // ========================= CI ==============================
+        // ============================================================
+
+        // ============================================================
+        // 1. Environment Check
+        // ============================================================
+        stage('Environment Check') {
             steps {
-                checkout scm
+                bat '''
+                    @echo off
+
+                    echo ==========================================
+                    echo ENVIRONMENT CHECK
+                    echo ==========================================
+
+                    echo.
+                    echo ===== Jenkins User =====
+                    whoami
+
+                    echo.
+                    echo ===== Python =====
+                    set PATH=%PYTHON_BIN%;%PATH%
+                    python --version
+
+                    echo.
+                    echo ===== Docker =====
+                    set PATH=%DOCKER_BIN%;%PATH%
+                    docker --version
+
+                    echo.
+                    echo ===== kubectl =====
+                    set PATH=%KUBECTL_BIN%;%PATH%
+                    where kubectl
+
+                    echo.
+                    echo ===== AWS CLI =====
+                    aws --version
+
+                    echo.
+                    echo ===== AWS Region =====
+                    echo %AWS_REGION%
+
+                    echo.
+                    echo ===== EKS Cluster =====
+                    echo %EKS_CLUSTER_NAME%
+
+                    echo.
+                    echo ===== ECR Image =====
+                    echo %ECR_IMAGE%
+
+                    echo.
+                    echo ===== IMAGE TAG =====
+                    echo %IMAGE_TAG%
+
+                    echo.
+                    echo ===== Kubernetes Namespace =====
+                    echo %K8S_NAMESPACE%
+
+                    echo.
+                    echo ===== Jenkins Workspace =====
+                    echo %WORKSPACE%
+
+                    echo.
+                    echo ===== Kubeconfig =====
+                    echo %KUBECONFIG%
+
+                    echo.
+                    echo ==========================================
+                    echo ENVIRONMENT CHECK COMPLETE
+                    echo ==========================================
+                '''
             }
         }
 
+
+        // ============================================================
+        // 2. Checkout Source
+        // ============================================================
+        stage('Checkout Source') {
+            steps {
+
+                checkout([
+                    $class: 'GitSCM',
+
+                    branches: [[
+                        name: '*/master'
+                    ]],
+
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/Earnest07/EKS_TF_CICD_OBS_Stack.git'
+                    ]],
+
+                    extensions: [
+                        [$class: 'CleanBeforeCheckout']
+                    ]
+                ])
+
+                bat '''
+                    @echo off
+
+                    echo ==========================================
+                    echo REPOSITORY CONTENT
+                    echo ==========================================
+
+                    dir
+
+                    echo.
+                    echo ===== Application =====
+                    dir app
+
+                    echo.
+                    echo ===== Docker =====
+                    dir docker
+
+                    echo.
+                    echo ===== Kubernetes =====
+                    dir k8s /s
+
+                    echo.
+                    echo ==========================================
+                    echo CHECKOUT COMPLETE
+                    echo ==========================================
+                '''
+            }
+        }
+
+
+        // ============================================================
+        // 3. Install Dependencies
+        // ============================================================
         stage('Install Dependencies') {
             steps {
-                bat '''
+
+                bat """
+                    @echo off
+
+                    echo ==========================================
+                    echo INSTALL PYTHON DEPENDENCIES
+                    echo ==========================================
+
+                    set PATH=%PYTHON_BIN%;%PATH%
+
                     python -m venv .venv
 
                     .venv\\Scripts\\python.exe -m pip install --upgrade pip
 
                     .venv\\Scripts\\pip.exe install -r app\\requirements.txt
-                '''
+
+                    echo.
+                    echo ==========================================
+                    echo DEPENDENCIES INSTALLED
+                    echo ==========================================
+                """
             }
         }
 
+
+        // ============================================================
+        // 4. Run Tests
+        // ============================================================
         stage('Run Tests') {
             steps {
+
                 bat '''
+                    @echo off
+
+                    echo ==========================================
+                    echo RUNNING TESTS
+                    echo ==========================================
+
+                    .venv\\Scripts\\python.exe --version
+
                     .venv\\Scripts\\pytest.exe app\\tests -v
+
+                    if errorlevel 1 (
+                        echo.
+                        echo ERROR: Tests failed.
+                        exit /b 1
+                    )
+
+                    echo.
+                    echo ==========================================
+                    echo ALL TESTS PASSED
+                    echo ==========================================
                 '''
             }
         }
 
+
+        // ============================================================
+        // 5. Docker Build
+        // ============================================================
         stage('Docker Build') {
             steps {
+
                 bat """
+                    @echo off
+
+                    echo ==========================================
+                    echo DOCKER BUILD
+                    echo ==========================================
+
+                    set PATH=%DOCKER_BIN%;%PATH%
+
+                    echo.
+                    echo Image:
+                    echo ${ECR_IMAGE}:${IMAGE_TAG}
+
+                    echo.
+                    echo Building Docker image...
+
                     docker build ^
                       -f docker\\Dockerfile ^
                       -t ${ECR_IMAGE}:${IMAGE_TAG} ^
                       .
+
+                    if errorlevel 1 (
+                        echo.
+                        echo ERROR: Docker build failed.
+                        exit /b 1
+                    )
+
+                    echo.
+                    echo Docker image built successfully.
+
+                    echo.
+                    echo ==========================================
+                    echo DOCKER BUILD COMPLETE
+                    echo ==========================================
                 """
             }
         }
 
+
+        // ============================================================
+        // 6. AWS Identity
+        // ============================================================
+        stage('AWS Identity') {
+            steps {
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat '''
+                        @echo off
+
+                        echo ==========================================
+                        echo AWS IDENTITY
+                        echo ==========================================
+
+                        aws sts get-caller-identity
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: AWS authentication failed.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo AWS authentication successful.
+                    '''
+                }
+            }
+        }
+
+
+        // ============================================================
+        // 7. ECR Login
+        // ============================================================
         stage('ECR Login') {
             steps {
-                bat """
-                    aws ecr get-login-password ^
-                      --region ${AWS_REGION} ^
-                      | docker login ^
-                      --username AWS ^
-                      --password-stdin ${ECR_REGISTRY}
-                """
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat """
+                        @echo off
+
+                        echo ==========================================
+                        echo ECR LOGIN
+                        echo ==========================================
+
+                        set PATH=%DOCKER_BIN%;%PATH%
+
+                        aws ecr get-login-password ^
+                          --region ${AWS_REGION} ^
+                          | docker login ^
+                          --username AWS ^
+                          --password-stdin ${ECR_REGISTRY}
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: ECR login failed.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ECR login successful.
+                    """
+                }
             }
         }
 
+
+        // ============================================================
+        // 8. Push Image to ECR
+        // ============================================================
         stage('Push Image to ECR') {
             steps {
-                bat """
-                    docker push ${ECR_IMAGE}:${IMAGE_TAG}
-                """
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat """
+                        @echo off
+
+                        echo ==========================================
+                        echo PUSH IMAGE TO ECR
+                        echo ==========================================
+
+                        set PATH=%DOCKER_BIN%;%PATH%
+
+                        echo.
+                        echo Pushing:
+                        echo ${ECR_IMAGE}:${IMAGE_TAG}
+
+                        docker push ${ECR_IMAGE}:${IMAGE_TAG}
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: Docker push failed.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ==========================================
+                        echo IMAGE PUSHED SUCCESSFULLY
+                        echo ==========================================
+                    """
+                }
             }
         }
 
+
+        // ============================================================
+        // 9. Verify ECR Image
+        // ============================================================
+        stage('Verify ECR Image') {
+            steps {
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat """
+                        @echo off
+
+                        echo ==========================================
+                        echo VERIFY ECR IMAGE
+                        echo ==========================================
+
+                        echo.
+                        echo Repository:
+                        echo ${ECR_REPOSITORY}
+
+                        echo.
+                        echo Image:
+                        echo ${ECR_IMAGE}:${IMAGE_TAG}
+
+                        echo.
+                        echo Checking ECR...
+
+                        aws ecr describe-images ^
+                          --repository-name ${ECR_REPOSITORY} ^
+                          --image-ids imageTag=${IMAGE_TAG} ^
+                          --region ${AWS_REGION}
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: Image was not found in ECR.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ==========================================
+                        echo ECR IMAGE VERIFIED
+                        echo ==========================================
+                    """
+                }
+            }
+        }
+
+
+        // ============================================================
+        // ========================= CD ==============================
+        // ============================================================
+
+        // ============================================================
+        // 10. Configure EKS Access
+        // ============================================================
         stage('Configure EKS Access') {
             steps {
-                bat """
-                    aws eks update-kubeconfig ^
-                      --region ${AWS_REGION} ^
-                      --name ${EKS_CLUSTER}
-                """
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat '''
+                        @echo off
+
+                        echo ==========================================
+                        echo CONFIGURE EKS ACCESS
+                        echo ==========================================
+
+                        set PATH=%KUBECTL_BIN%;%PATH%
+
+                        if not exist "%WORKSPACE%\\.kube" (
+                            mkdir "%WORKSPACE%\\.kube"
+                        )
+
+                        set KUBECONFIG=%WORKSPACE%\\.kube\\config
+
+                        echo.
+                        echo Updating kubeconfig...
+
+                        aws eks update-kubeconfig ^
+                          --name %EKS_CLUSTER_NAME% ^
+                          --region %AWS_REGION% ^
+                          --kubeconfig "%KUBECONFIG%"
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: Failed to configure EKS kubeconfig.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo Kubernetes context:
+
+                        kubectl config current-context
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: Kubernetes context unavailable.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ==========================================
+                        echo EKS ACCESS CONFIGURED
+                        echo ==========================================
+                    '''
+                }
             }
         }
 
-        stage('Deploy Kubernetes Manifests') {
+
+        // ============================================================
+        // 11. Diagnose EKS Authentication
+        // ============================================================
+        stage('Diagnose EKS Authentication') {
             steps {
-                bat """
-                    kubectl apply -k ${K8S_OVERLAY}
-                """
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat '''
+                        @echo off
+
+                        echo ==========================================
+                        echo EKS AUTHENTICATION DIAGNOSTICS
+                        echo ==========================================
+
+                        set PATH=%KUBECTL_BIN%;%PATH%
+                        set KUBECONFIG=%WORKSPACE%\\.kube\\config
+
+                        echo.
+                        echo ===== AWS Identity =====
+
+                        aws sts get-caller-identity
+
+                        echo.
+                        echo ===== EKS Token Generation =====
+
+                        aws eks get-token ^
+                          --region %AWS_REGION% ^
+                          --cluster-name %EKS_CLUSTER_NAME%
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: EKS token generation failed.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ===== Kubernetes Context =====
+
+                        kubectl config current-context
+
+                        echo.
+                        echo ==========================================
+                        echo EKS AUTHENTICATION VERIFIED
+                        echo ==========================================
+                    '''
+                }
             }
         }
 
+
+        // ============================================================
+        // 12. Verify Kubernetes Connection
+        // ============================================================
+        stage('Verify Kubernetes Connection') {
+            steps {
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat '''
+                        @echo off
+
+                        echo ==========================================
+                        echo VERIFY KUBERNETES CONNECTION
+                        echo ==========================================
+
+                        set PATH=%KUBECTL_BIN%;%PATH%
+                        set KUBECONFIG=%WORKSPACE%\\.kube\\config
+
+                        echo.
+                        echo ===== Kubernetes Nodes =====
+
+                        kubectl get nodes -o wide
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: Cannot connect to Kubernetes.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ===== Kubernetes Namespaces =====
+
+                        kubectl get namespaces
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: Cannot list Kubernetes namespaces.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ==========================================
+                        echo KUBERNETES CONNECTION VERIFIED
+                        echo ==========================================
+                    '''
+                }
+            }
+        }
+
+
+        // ============================================================
+        // 13. Apply Kubernetes Manifests
+        // ============================================================
+        stage('Apply Kubernetes Manifests') {
+            steps {
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat '''
+                        @echo off
+
+                        echo ==========================================
+                        echo APPLY KUBERNETES MANIFESTS
+                        echo ==========================================
+
+                        set PATH=%KUBECTL_BIN%;%PATH%
+                        set KUBECONFIG=%WORKSPACE%\\.kube\\config
+
+                        echo.
+                        echo Applying Kustomize overlay:
+
+                        kubectl apply -k k8s/overlays/dev
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: Kubernetes manifest deployment failed.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo Kubernetes manifests applied successfully.
+
+                        echo.
+                        echo ===== Current Resources =====
+
+                        kubectl get all -n %K8S_NAMESPACE%
+
+                        echo.
+                        echo ==========================================
+                        echo KUBERNETES MANIFESTS APPLIED
+                        echo ==========================================
+                    '''
+                }
+            }
+        }
+
+
+        // ============================================================
+        // 14. Update Deployment Image
+        // ============================================================
         stage('Update Deployment Image') {
             steps {
-                bat """
-                    kubectl set image deployment/eks-cicd-demo ^
-                      eks-cicd-demo=${ECR_IMAGE}:${IMAGE_TAG} ^
-                      -n ${K8S_NAMESPACE}
-                """
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat '''
+                        @echo off
+
+                        echo ==========================================
+                        echo UPDATE DEPLOYMENT IMAGE
+                        echo ==========================================
+
+                        set PATH=%KUBECTL_BIN%;%PATH%
+                        set KUBECONFIG=%WORKSPACE%\\.kube\\config
+
+                        echo.
+                        echo Deployment:
+                        echo %K8S_DEPLOYMENT%
+
+                        echo.
+                        echo Container:
+                        echo %K8S_CONTAINER%
+
+                        echo.
+                        echo New Image:
+                        echo %ECR_IMAGE%:%IMAGE_TAG%
+
+                        kubectl set image deployment/%K8S_DEPLOYMENT% ^
+                          %K8S_CONTAINER%=%ECR_IMAGE%:%IMAGE_TAG% ^
+                          -n %K8S_NAMESPACE%
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: Failed to update Deployment image.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo Deployment image updated successfully.
+
+                        echo.
+                        echo ===== Current Deployment Image =====
+
+                        kubectl get deployment %K8S_DEPLOYMENT% ^
+                          -n %K8S_NAMESPACE% ^
+                          -o jsonpath="{.spec.template.spec.containers[0].image}"
+
+                        echo.
+                    '''
+                }
             }
         }
 
-        stage('Wait for Rollout') {
+
+        // ============================================================
+        // 15. Wait For Rollout
+        // ============================================================
+        stage('Wait For Rollout') {
             steps {
-                bat """
-                    kubectl rollout status deployment/eks-cicd-demo ^
-                      -n ${K8S_NAMESPACE} ^
-                      --timeout=180s
-                """
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat '''
+                        @echo off
+
+                        echo ==========================================
+                        echo WAIT FOR ROLLOUT
+                        echo ==========================================
+
+                        set PATH=%KUBECTL_BIN%;%PATH%
+                        set KUBECONFIG=%WORKSPACE%\\.kube\\config
+
+                        echo.
+                        echo Waiting for Deployment rollout...
+
+                        kubectl rollout status deployment/%K8S_DEPLOYMENT% ^
+                          -n %K8S_NAMESPACE% ^
+                          --timeout=180s
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ERROR: Deployment rollout failed.
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ==========================================
+                        echo DEPLOYMENT ROLLOUT SUCCESSFUL
+                        echo ==========================================
+                    '''
+                }
             }
         }
 
-        stage('Verify Deployment') {
+
+        // ============================================================
+        // 16. Final Deployment Verification
+        // ============================================================
+        stage('Final Deployment Verification') {
             steps {
-                bat '''
-                    kubectl get deployment -n dev
-                    kubectl get pods -n dev
-                    kubectl get service -n dev
-                '''
+
+                withCredentials([
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-jenkins-ecr'
+                    ]
+                ]) {
+
+                    bat '''
+                        @echo off
+
+                        echo ==========================================
+                        echo FINAL DEPLOYMENT VERIFICATION
+                        echo ==========================================
+
+                        set PATH=%KUBECTL_BIN%;%PATH%
+                        set KUBECONFIG=%WORKSPACE%\\.kube\\config
+
+                        echo.
+                        echo ==========================================
+                        echo DEPLOYMENT
+                        echo ==========================================
+
+                        kubectl get deployment %K8S_DEPLOYMENT% ^
+                          -n %K8S_NAMESPACE% ^
+                          -o wide
+
+                        echo.
+                        echo ==========================================
+                        echo PODS
+                        echo ==========================================
+
+                        kubectl get pods ^
+                          -n %K8S_NAMESPACE% ^
+                          -o wide
+
+                        echo.
+                        echo ==========================================
+                        echo SERVICES
+                        echo ==========================================
+
+                        kubectl get services ^
+                          -n %K8S_NAMESPACE%
+
+                        echo.
+                        echo ==========================================
+                        echo DEPLOYED IMAGE
+                        echo ==========================================
+
+                        kubectl get deployment %K8S_DEPLOYMENT% ^
+                          -n %K8S_NAMESPACE% ^
+                          -o jsonpath="{.spec.template.spec.containers[0].image}"
+
+                        echo.
+
+                        echo.
+                        echo ==========================================
+                        echo ROLLOUT HISTORY
+                        echo ==========================================
+
+                        kubectl rollout history deployment/%K8S_DEPLOYMENT% ^
+                          -n %K8S_NAMESPACE%
+
+                        echo.
+                        echo ==========================================
+                        echo CI + CD DEPLOYMENT SUCCESSFUL
+                        echo ==========================================
+                    '''
+                }
             }
         }
     }
 
+
+    // ================================================================
+    // POST ACTIONS
+    // ================================================================
     post {
 
         success {
-            echo "CI/CD pipeline completed successfully."
-            echo "Image deployed: ${ECR_IMAGE}:${IMAGE_TAG}"
+
+            echo "=========================================="
+            echo "CI + CD PIPELINE SUCCESSFUL"
+            echo "=========================================="
+
+            echo "Build: ${BUILD_NUMBER}"
+
+            echo "Image: ${ECR_IMAGE}:${IMAGE_TAG}"
+
+            echo "EKS Cluster: ${EKS_CLUSTER_NAME}"
+
+            echo "Namespace: ${K8S_NAMESPACE}"
+
+            echo "Deployment: ${K8S_DEPLOYMENT}"
+
+            echo "=========================================="
         }
 
         failure {
-            echo "CI/CD pipeline failed."
+
+            echo "=========================================="
+            echo "CI + CD PIPELINE FAILED"
+            echo "=========================================="
+
+            echo "Build: ${BUILD_NUMBER}"
+
+            echo "Image: ${ECR_IMAGE}:${IMAGE_TAG}"
+
+            echo "EKS Cluster: ${EKS_CLUSTER_NAME}"
+
+            echo "Namespace: ${K8S_NAMESPACE}"
+
+            echo "Deployment: ${K8S_DEPLOYMENT}"
+
+            echo "=========================================="
+        }
+
+        always {
+
+            echo "=========================================="
+            echo "PIPELINE BUILD #${BUILD_NUMBER} COMPLETED"
+            echo "=========================================="
         }
     }
 }
