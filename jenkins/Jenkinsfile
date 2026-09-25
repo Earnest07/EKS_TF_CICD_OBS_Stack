@@ -880,6 +880,84 @@ pipeline {
                 }
             }
         }
+
+        stage('Deploy And Verify') {
+            steps {
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-jenkins-ecr']
+                ]) {
+                    bat '''
+                        @echo off
+                        setlocal
+
+                        echo ==========================================
+                        echo DEPLOYING IMAGE
+                        echo ==========================================
+                        echo Image: %ECR_IMAGE%:%IMAGE_TAG%
+
+                        kubectl set image deployment/%K8S_DEPLOYMENT% ^
+                        -n %K8S_NAMESPACE% ^
+                        %K8S_CONTAINER%=%ECR_IMAGE%:%IMAGE_TAG%
+
+                        if errorlevel 1 (
+                            echo.
+                            echo IMAGE UPDATE FAILED
+                            echo ROLLING BACK...
+                            kubectl rollout undo deployment/%K8S_DEPLOYMENT% -n %K8S_NAMESPACE%
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ==========================================
+                        echo WAITING FOR ROLLOUT
+                        echo ==========================================
+
+                        kubectl rollout status deployment/%K8S_DEPLOYMENT% ^
+                        -n %K8S_NAMESPACE% ^
+                        --timeout=180s
+
+                        if errorlevel 1 (
+                            echo.
+                            echo ==========================================
+                            echo ROLLOUT FAILED
+                            echo STARTING AUTOMATIC ROLLBACK
+                            echo ==========================================
+
+                            kubectl rollout undo deployment/%K8S_DEPLOYMENT% ^
+                            -n %K8S_NAMESPACE%
+
+                            if errorlevel 1 (
+                                echo ROLLBACK COMMAND FAILED
+                                exit /b 1
+                            )
+
+                            echo.
+                            echo WAITING FOR ROLLBACK
+                            kubectl rollout status deployment/%K8S_DEPLOYMENT% ^
+                            -n %K8S_NAMESPACE% ^
+                            --timeout=180s
+
+                            if errorlevel 1 (
+                                echo ROLLBACK VERIFICATION FAILED
+                                exit /b 1
+                            )
+
+                            echo.
+                            echo ==========================================
+                            echo ROLLBACK SUCCESSFUL
+                            echo ==========================================
+                            exit /b 1
+                        )
+
+                        echo.
+                        echo ==========================================
+                        echo ROLLOUT SUCCESSFUL
+                        echo ==========================================
+                    '''
+                }
+            }
+        }
     }
 
 
